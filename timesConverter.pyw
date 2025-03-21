@@ -8,7 +8,7 @@ def get_selected_timezone():
     selected_timezone = timezone_var.get()
     return pytz.timezone(selected_timezone) if selected_timezone == "Europe/Paris" else pytz.UTC
 
-# Fonction pour analyser une entrée (timestamp, date, now) et appliquer des opérations temporelles
+# Fonction pour analyser une entrée et appliquer des opérations temporelles
 def parse_and_compute_time(input_str):
     try:
         input_str = input_str.strip()
@@ -18,27 +18,40 @@ def parse_and_compute_time(input_str):
             base_time = datetime.datetime.now(get_selected_timezone())
             input_str = input_str[3:].strip()  # Retirer "now"
         else:
-            # Vérifier si l'entrée est un timestamp en millisecondes ou en secondes
-            match = re.match(r"^(\d+)", input_str)
-            if match:
-                timestamp = int(match.group(1))
-                remaining_input = input_str[len(match.group(1)):].strip()  # Récupérer le reste de la chaîne
-                
-                if timestamp > 10**10:  # Millisecondes -> Secondes
-                    timestamp //= 1000
-                base_time = datetime.datetime.fromtimestamp(timestamp, tz=get_selected_timezone())
-
-                input_str = remaining_input  # Conserver le reste de la saisie pour appliquer les opérations
+            # Vérifier si l'entrée est une date complète "YYYY-MM-DD HH:MM:SS"
+            date_match = re.match(r"^\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2}:\d{2})?", input_str)
+            fr_date_match = re.match(r"^\d{2}/\d{2}/\d{4}(?: \d{2}:\d{2}:\d{2})?", input_str)
+            
+            if date_match:
+                date_str = date_match.group()
+                if " " not in date_str:
+                    date_str += " 00:00:00"  # Ajouter l'heure si absente
+                base_time = datetime.datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
+                base_time = get_selected_timezone().localize(base_time)
+                input_str = input_str[len(date_match.group()):].strip()
+            elif fr_date_match:
+                date_str = fr_date_match.group()
+                if " " not in date_str:
+                    date_str += " 00:00:00"
+                base_time = datetime.datetime.strptime(date_str, "%d/%m/%Y %H:%M:%S")
+                base_time = get_selected_timezone().localize(base_time)
+                input_str = input_str[len(fr_date_match.group()):].strip()
             else:
-                # Essayer d'interpréter une date au format YYYY-MM-DD HH:MM:SS
-                try:
-                    base_time = datetime.datetime.strptime(input_str[:19], "%Y-%m-%d %H:%M:%S")
-                    base_time = get_selected_timezone().localize(base_time)  # Appliquer le fuseau
-                    input_str = input_str[19:].strip()  # Récupérer le reste de la chaîne
-                except ValueError:
-                    raise ValueError("Format invalide. Utilisez 'YYYY-MM-DD HH:MM:SS', un timestamp ou 'now'.")
+                # Vérifier si l'entrée est un timestamp
+                match = re.match(r"^(\d+)", input_str)
+                if match:
+                    timestamp = int(match.group(1))
+                    remaining_input = input_str[len(match.group(1)):].strip()
+                
+                    if timestamp > 10**10:  # Millisecondes -> Secondes
+                        timestamp //= 1000
+                    base_time = datetime.datetime.fromtimestamp(timestamp, tz=get_selected_timezone())
 
-        # Appliquer les modifications de temps (+1d, -2h, etc.)
+                    input_str = remaining_input
+                else:
+                    raise ValueError("Format invalide. Utilisez 'YYYY-MM-DD', 'JJ/MM/AAAA', un timestamp ou 'now'.")
+
+        # Appliquer les modifications temporelles (+1d, -2h, etc.)
         time_delta = datetime.timedelta()
         matches = re.findall(r"([+-]\d+)([dhms])", input_str)
         for value, unit in matches:
@@ -68,37 +81,39 @@ def update_result_text(text):
     result_text_widget.insert(tk.END, text)
     result_text_widget.config(state=tk.DISABLED)
 
+# Fonction pour valider avec la touche Entrée
+def on_enter_pressed(event):
+    parse_and_compute_time(entry.get())
+
 # Création de la fenêtre principale
 window = tk.Tk()
 window.title("Convertisseur de Timestamp")
-
-# Dimensions et position de la fenêtre
-window.geometry("500x300+500+200")
+window.geometry("300x230+500+200")  # Taille réduite
 
 # Menu déroulant pour choisir le fuseau horaire
-timezone_label = tk.Label(window, text="Choisissez le fuseau horaire :")
-timezone_label.pack(pady=5)
+timezone_label = tk.Label(window, text="Fuseau horaire :")
+timezone_label.pack(pady=2)
 
 timezone_var = tk.StringVar(window)
 timezone_var.set("Europe/Paris")  # Valeur par défaut
-
 timezone_menu = tk.OptionMenu(window, timezone_var, "Europe/Paris", "UTC")
-timezone_menu.pack(pady=5)
+timezone_menu.pack(pady=2)
 
 # Champ de saisie pour la date/timestamp avec opérations
-entry_label = tk.Label(window, text="Entrez un timestamp, une date ou 'now' avec opérations :")
-entry_label.pack(pady=5)
+entry_label = tk.Label(window, text="Date, timestamp ou 'now' :")
+entry_label.pack(pady=2)
 entry = tk.Entry(window, width=30)
-entry.pack(pady=5)
+entry.pack(pady=2)
+entry.bind("<Return>", on_enter_pressed)  # Capture de la touche Entrée
 
 # Bouton pour convertir l'entrée
 convert_button = tk.Button(window, text="Convertir", command=lambda: parse_and_compute_time(entry.get()))
-convert_button.pack(pady=5)
+convert_button.pack(pady=2)
 
-# Widget Text pour afficher le résultat (sélectionnable)
-result_text_widget = tk.Text(window, height=4, width=50, wrap=tk.WORD, font=("Arial", 14))
-result_text_widget.pack(pady=20)
-result_text_widget.config(state=tk.DISABLED)  # Désactiver l'édition
+# Widget Text pour afficher le résultat
+result_text_widget = tk.Text(window, height=3, width=50, wrap=tk.WORD, font=("Arial", 12))
+result_text_widget.pack(pady=10)
+result_text_widget.config(state=tk.DISABLED)
 
-# Lancer la boucle principale de l'interface graphique
+# Lancer l'interface graphique
 window.mainloop()
